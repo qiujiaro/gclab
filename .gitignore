@@ -1,0 +1,8 @@
+build*/
+third_party/
+results/**/*.nsys-rep
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+compile_commands.json

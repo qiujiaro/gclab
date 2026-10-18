@@ -1,5 +1,9 @@
 #include "gclab/sim/channel.h"
 
+#include <algorithm>
+#include <string>
+#include <utility>
+
 #include "gclab/common/error.h"
 
 namespace gclab::sim {
@@ -11,8 +15,14 @@ void Channel::push(Message msg) {
   //   Question to answer in your notes: why is it fine (and slightly better)
   //   to call notify_* AFTER unlocking? Should this be notify_one or
   //   notify_all, given that abort() also uses cv_?
-  (void)msg;
-  throw NotImplemented("Channel::push");
+  {
+    std::lock_guard<std::mutex> lock(mu_);
+    queue_.push_back(std::move(msg));
+  }
+  // Different waiters may be looking for different tags. Waking only one can
+  // wake a waiter that cannot consume this message and leave the matching
+  // waiter asleep until its deadline.
+  cv_.notify_all();
 }
 
 Message Channel::pop(int tag, std::chrono::milliseconds timeout) {
@@ -27,9 +37,31 @@ Message Channel::pop(int tag, std::chrono::milliseconds timeout) {
   //          std::cv_status::timeout AND there is still no match, throw
   //          TimeoutError with a message that includes the tag.
   //   3. Spurious wakeups exist. Your loop must tolerate them.
-  (void)tag;
-  (void)timeout;
-  throw NotImplemented("Channel::pop");
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  std::unique_lock<std::mutex> lock(mu_);
+
+  for (;;) {
+    if (aborted_) throw AbortedError("channel aborted");
+
+    const auto it = std::find_if(queue_.begin(), queue_.end(),
+                                 [tag](const Message& msg) { return msg.tag == tag; });
+    if (it != queue_.end()) {
+      Message msg = std::move(*it);
+      queue_.erase(it);
+      return msg;
+    }
+
+    if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) {
+      // Recheck while holding the lock: a push may have raced with the
+      // deadline and made the requested message available.
+      if (aborted_) throw AbortedError("channel aborted");
+      const auto match = std::find_if(queue_.begin(), queue_.end(),
+                                      [tag](const Message& msg) { return msg.tag == tag; });
+      if (match == queue_.end()) {
+        throw TimeoutError("timed out waiting for tag " + std::to_string(tag));
+      }
+    }
+  }
 }
 
 void Channel::abort() {

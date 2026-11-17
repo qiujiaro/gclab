@@ -40,6 +40,8 @@ add_library(gclab_core
   src/sim/world.cc
   src/sim/inproc_transport.cc
   src/sim/collectives.cc
+  src/sim/topology.cc
+  src/sim/bandwidth.cc
 )
 target_include_directories(gclab_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(gclab_core PUBLIC Threads::Threads)

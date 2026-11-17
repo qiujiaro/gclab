@@ -42,6 +42,15 @@ int highest_power_of_two_below(int value) {
 
 }  // namespace
 
+BlockRange block_for_rank(std::size_t total_count, int nranks, int rank) {
+  // TODO(M2/T7): validate nranks/rank and return an overflow-safe balanced
+  // partition. Cover total_count < nranks and total_count == 0.
+  (void)total_count;
+  (void)nranks;
+  (void)rank;
+  throw NotImplemented("block_for_rank");
+}
+
 void broadcast_linear(Transport& tp, void* buf, std::size_t bytes, int root) {
   validate_root(tp, root);
   if (bytes != 0 && buf == nullptr) throw CommError("null broadcast buffer");
@@ -147,6 +156,70 @@ void reduce_binomial(Transport& tp, const float* sendbuf, float* recvbuf, std::s
     const int parent_vrank = vrank - subtree_span;
     tp.send((parent_vrank + root) % p, accumulator.data(), bytes, tags::kReduce);
   }
+}
+
+void reduce_scatter_ring(Transport& tp, const float* sendbuf, float* recvbuf,
+                         std::size_t count, ReduceOp op, std::size_t chunk_bytes) {
+  // TODO(M2/T7,T8): implement p-1 ring steps, uneven blocks, and optional
+  // chunk pipelining using irecv/isend/wait. Do not modify sendbuf.
+  (void)tp;
+  (void)sendbuf;
+  (void)recvbuf;
+  (void)count;
+  (void)op;
+  (void)chunk_bytes;
+  throw NotImplemented("reduce_scatter_ring");
+}
+
+void allgather_ring(Transport& tp, const float* sendbuf, float* recvbuf,
+                    std::size_t count, std::size_t chunk_bytes) {
+  // TODO(M2/T7,T8): circulate uneven rank blocks for p-1 steps and support the
+  // same chunking semantics as reduce_scatter_ring.
+  (void)tp;
+  (void)sendbuf;
+  (void)recvbuf;
+  (void)count;
+  (void)chunk_bytes;
+  throw NotImplemented("allgather_ring");
+}
+
+void allreduce_ring(Transport& tp, const float* sendbuf, float* recvbuf,
+                    std::size_t count, ReduceOp op, std::size_t chunk_bytes) {
+  // TODO(M2/T7,T8): compose ReduceScatter + AllGather without introducing an
+  // extra full-size copy per rank.
+  (void)tp;
+  (void)sendbuf;
+  (void)recvbuf;
+  (void)count;
+  (void)op;
+  (void)chunk_bytes;
+  throw NotImplemented("allreduce_ring");
+}
+
+void allreduce_tree(Transport& tp, const float* sendbuf, float* recvbuf,
+                    std::size_t count, ReduceOp op) {
+  // TODO(M2/T9): compose binomial Reduce and Broadcast, including p=1 and
+  // zero-count inputs. Keep sendbuf unmodified.
+  (void)tp;
+  (void)sendbuf;
+  (void)recvbuf;
+  (void)count;
+  (void)op;
+  throw NotImplemented("allreduce_tree");
+}
+
+void allreduce_double_binary_tree(Transport& tp, const float* sendbuf, float* recvbuf,
+                                  std::size_t count, ReduceOp op,
+                                  std::size_t chunk_bytes) {
+  // TODO(M2/T9): construct complementary trees, split data between them, and
+  // pipeline reduce/broadcast chunks while preserving deterministic tags.
+  (void)tp;
+  (void)sendbuf;
+  (void)recvbuf;
+  (void)count;
+  (void)op;
+  (void)chunk_bytes;
+  throw NotImplemented("allreduce_double_binary_tree");
 }
 
 }  // namespace gclab::sim

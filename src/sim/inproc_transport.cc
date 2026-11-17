@@ -73,4 +73,39 @@ void InProcTransport::recv(int src, void* buf, std::size_t bytes, int tag) {
   clock_us_ = std::max(clock_us_, finish_us);
 }
 
+RequestPtr InProcTransport::isend(int dst, const void* buf, std::size_t bytes, int tag) {
+  // TODO(M2/T6): validate the peer and buffer, create an in-process send
+  // request, and start the operation without blocking the caller. Preserve the
+  // request buffer-lifetime contract documented by Transport.
+  (void)dst;
+  (void)buf;
+  (void)bytes;
+  (void)tag;
+  throw NotImplemented("InProcTransport::isend");
+}
+
+RequestPtr InProcTransport::irecv(int src, void* buf, std::size_t bytes, int tag) {
+  // TODO(M2/T6): create an in-process receive request that completes only when
+  // a matching message is available, or fails on timeout/world abort.
+  (void)src;
+  (void)buf;
+  (void)bytes;
+  (void)tag;
+  throw NotImplemented("InProcTransport::irecv");
+}
+
+void InProcTransport::wait(Request& request) {
+  // TODO(M2/T6): reject requests created by another transport, reject a
+  // second wait, complete the operation, and advance the simulated clock.
+  (void)request;
+  throw NotImplemented("InProcTransport::wait");
+}
+
+void InProcTransport::wait_all(std::vector<RequestPtr>& requests) {
+  // TODO(M2/T6): wait in input order and define how already-completed requests
+  // are handled when a later request fails.
+  (void)requests;
+  throw NotImplemented("InProcTransport::wait_all");
+}
+
 }  // namespace gclab::sim

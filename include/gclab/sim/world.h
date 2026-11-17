@@ -15,10 +15,17 @@
 #include "gclab/sim/transport.h"
 
 namespace gclab::sim {
+class Topology;
+}
+
+namespace gclab::sim {
 
 struct WorldConfig {
   int nranks = 2;
   LinkParams link{};  // homogeneous fully-connected network in Module 1
+  // TODO(M2/T10): when non-null, make InProcTransport use this topology and
+  // account for contention on LinkPath::shared_resources.
+  std::shared_ptr<const Topology> topology;
   std::chrono::milliseconds recv_timeout{2000};
 };
 

@@ -1,2 +1,5 @@
 add_executable(sim_rooted_bench sim_rooted_bench.cc)
 target_link_libraries(sim_rooted_bench PRIVATE gclab_core)
+
+add_executable(sim_allreduce_bench sim_allreduce_bench.cc)
+target_link_libraries(sim_allreduce_bench PRIVATE gclab_core)

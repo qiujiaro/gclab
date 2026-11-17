@@ -22,7 +22,20 @@ enum class ReduceOp { Sum, Max };
 namespace tags {
 inline constexpr int kBroadcast = 100;
 inline constexpr int kReduce = 200;
+inline constexpr int kReduceScatterRing = 300;
+inline constexpr int kAllGatherRing = 400;
+inline constexpr int kAllReduceTree = 500;
+inline constexpr int kAllReduceDoubleTree = 600;
 }  // namespace tags
+
+// A rank's contiguous portion of a possibly uneven element count. The first
+// `total_count % nranks` ranks own one extra element.
+struct BlockRange {
+  std::size_t offset = 0;
+  std::size_t count = 0;
+};
+
+BlockRange block_for_rank(std::size_t total_count, int nranks, int rank);
 
 // Root sends the full buffer to every other rank, one after another.
 // Simulated cost: alpha + (p-1) * n/beta. (Provided as a worked example.)
@@ -42,5 +55,30 @@ void reduce_linear(Transport& tp, const float* sendbuf, float* recvbuf, std::siz
 // Binomial-tree reduce (the mirror image of broadcast_binomial). P1 stretch.
 void reduce_binomial(Transport& tp, const float* sendbuf, float* recvbuf, std::size_t count,
                      ReduceOp op, int root);
+
+// Ring ReduceScatter. `sendbuf` contains `count` elements on every rank;
+// `recvbuf` has capacity block_for_rank(count, size, rank).count.
+// chunk_bytes == 0 means one message per rank block.
+void reduce_scatter_ring(Transport& tp, const float* sendbuf, float* recvbuf,
+                         std::size_t count, ReduceOp op, std::size_t chunk_bytes = 0);
+
+// Ring AllGather. This rank contributes the block described by
+// block_for_rank(count, size, rank); `recvbuf` has capacity `count`.
+void allgather_ring(Transport& tp, const float* sendbuf, float* recvbuf,
+                    std::size_t count, std::size_t chunk_bytes = 0);
+
+void allreduce_ring(Transport& tp, const float* sendbuf, float* recvbuf,
+                    std::size_t count, ReduceOp op, std::size_t chunk_bytes = 0);
+
+// Reference tree implementation: binomial Reduce followed by binomial
+// Broadcast. Useful as a correctness oracle before the double-tree version.
+void allreduce_tree(Transport& tp, const float* sendbuf, float* recvbuf,
+                    std::size_t count, ReduceOp op);
+
+// Two complementary binary trees split the payload so roots/internal nodes
+// are balanced across ranks.
+void allreduce_double_binary_tree(Transport& tp, const float* sendbuf, float* recvbuf,
+                                  std::size_t count, ReduceOp op,
+                                  std::size_t chunk_bytes = 0);
 
 }  // namespace gclab::sim

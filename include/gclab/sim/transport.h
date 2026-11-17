@@ -24,8 +24,19 @@
 // Module 2 adds non-blocking isend/irecv for pipelining.
 
 #include <cstddef>
+#include <memory>
+#include <vector>
 
 namespace gclab::sim {
+
+// Opaque completion handle returned by non-blocking operations. Concrete
+// transports own the state needed to complete or fail the operation.
+class Request {
+ public:
+  virtual ~Request() = default;
+};
+
+using RequestPtr = std::unique_ptr<Request>;
 
 class Transport {
  public:
@@ -36,6 +47,19 @@ class Transport {
 
   virtual void send(int dst, const void* buf, std::size_t bytes, int tag) = 0;
   virtual void recv(int src, void* buf, std::size_t bytes, int tag) = 0;
+
+  // Module 2: non-blocking operations used by chunked collectives.
+  //
+  // Buffer lifetime contract:
+  //   - isend: `buf` must remain readable until wait() completes.
+  //   - irecv: `buf` must remain writable until wait() completes.
+  // A Request belongs to the Transport that created it and may be waited once.
+  virtual RequestPtr isend(int dst, const void* buf, std::size_t bytes, int tag) = 0;
+  virtual RequestPtr irecv(int src, void* buf, std::size_t bytes, int tag) = 0;
+  virtual void wait(Request& request) = 0;
+
+  // Wait in input order and propagate the first operation error.
+  virtual void wait_all(std::vector<RequestPtr>& requests) = 0;
 
   // Current SIMULATED time on this rank, in microseconds.
   virtual double now_us() const = 0;

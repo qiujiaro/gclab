@@ -14,3 +14,16 @@ foreach(t
   # Every test is bounded: a hang becomes a failure, never a stuck terminal.
   set_tests_properties(${t} PROPERTIES TIMEOUT 60 LABELS "cpu_only;module1")
 endforeach()
+
+# Module-2 starter tests intentionally report TODO until their corresponding
+# implementation is completed. Run M1 alone with: ctest -L module1
+foreach(t
+    test_step5_async
+    test_step6_ring
+    test_step7_pipeline
+    test_step8_tree_topology)
+  add_executable(${t} ${t}.cc)
+  target_link_libraries(${t} PRIVATE testlib_main)
+  add_test(NAME ${t} COMMAND ${t})
+  set_tests_properties(${t} PROPERTIES TIMEOUT 60 LABELS "cpu_only;module2")
+endforeach()

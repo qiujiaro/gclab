@@ -44,6 +44,10 @@ class InProcTransport final : public Transport {
 
   void send(int dst, const void* buf, std::size_t bytes, int tag) override;
   void recv(int src, void* buf, std::size_t bytes, int tag) override;
+  RequestPtr isend(int dst, const void* buf, std::size_t bytes, int tag) override;
+  RequestPtr irecv(int src, void* buf, std::size_t bytes, int tag) override;
+  void wait(Request& request) override;
+  void wait_all(std::vector<RequestPtr>& requests) override;
 
   double now_us() const override { return clock_us_; }
 

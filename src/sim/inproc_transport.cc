@@ -11,6 +11,38 @@
 
 namespace gclab::sim {
 
+namespace {
+
+class SendRequest final : public Request {
+ public:
+  SendRequest(InProcTransport* owner_value, double finish_us_value)
+      : owner(owner_value), finish_us(finish_us_value) {}
+
+  InProcTransport* owner;
+  double finish_us;
+  bool waited = false;
+};
+
+class RecvRequest final : public Request {
+ public:
+  RecvRequest(InProcTransport* owner_value, int src_value, void* buffer_value,
+              std::size_t bytes_value, int tag_value)
+      : owner(owner_value),
+        src(src_value),
+        buffer(buffer_value),
+        bytes(bytes_value),
+        tag(tag_value) {}
+
+  InProcTransport* owner;
+  int src;
+  void* buffer;
+  std::size_t bytes;
+  int tag;
+  bool waited = false;
+};
+
+}  // namespace
+
 InProcTransport::InProcTransport(World& world, int rank) : world_(world), rank_(rank) {}
 
 void InProcTransport::send(int dst, const void* buf, std::size_t bytes, int tag) {
@@ -74,14 +106,28 @@ void InProcTransport::recv(int src, void* buf, std::size_t bytes, int tag) {
 }
 
 RequestPtr InProcTransport::isend(int dst, const void* buf, std::size_t bytes, int tag) {
-  // TODO(M2/T6): validate the peer and buffer, create an in-process send
-  // request, and start the operation without blocking the caller. Preserve the
-  // request buffer-lifetime contract documented by Transport.
-  (void)dst;
-  (void)buf;
-  (void)bytes;
-  (void)tag;
-  throw NotImplemented("InProcTransport::isend");
+  // Reserve the outgoing port and publish an eager copy immediately. Waiting
+  // on the returned request will advance the caller's clock to finish_us.
+  if (dst < 0 || dst >= size()) {
+    throw CommError("bad send peer " + std::to_string(dst) + " from rank " +
+                    std::to_string(rank_));
+  }
+  if (bytes != 0 && buf == nullptr) {
+    throw CommError("null send buffer with non-zero size");
+  }
+
+  const double start_us = std::max(clock_us_, tx_free_us_);
+  const double finish_us = start_us + wire_time_us(world_.config().link, bytes);
+  tx_free_us_ = finish_us;
+
+  Message msg;
+  msg.tag = tag;
+  msg.send_start_us = start_us;
+  msg.payload.resize(bytes);
+  if (bytes != 0) std::memcpy(msg.payload.data(), buf, bytes);
+  world_.channel(rank_, dst).push(std::move(msg));
+
+  return std::make_unique<SendRequest>(this, finish_us);
 }
 
 RequestPtr InProcTransport::irecv(int src, void* buf, std::size_t bytes, int tag) {

@@ -13,7 +13,17 @@ prepared scripts. Every result is labelled `SIMULATED` or `MEASURED`.
 | Module | Topic | State |
 |---|---|---|
 | M1 | Rank runtime, Transport, α-β model, Broadcast/Reduce | in progress |
-| M2–M9 | see [docs/ROADMAP.md](docs/ROADMAP.md) | planned |
+| M2 | Ring/Tree AllReduce, AllGather, ReduceScatter, chunk pipelining, topology simulation, algbw/busbw | in progress |
+| M3 | CUDA fundamentals: memory transfers, P2P, streams/events, topology probing | planned |
+| M4 | CUDA P2P transport, reduction kernel, ring AllReduce, NCCL comparison | planned |
+| M5 | NCCL internals: initialization, topology, channels, algorithms/protocols, transports | planned |
+| M6 | Benchmark framework: NCCL harness, matrix runner, result schema, plots, regression gate | planned |
+| M7 | PyTorch distributed: DDP, bucketing, communication hooks, tensor parallelism | planned |
+| M8 | Debugging, reliability, timeouts, and failure injection | planned |
+| M9 | Advanced optimization project | planned |
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for dependencies, implementation tasks, experiments, and
+completion gates for every module.
 
 No hardware results yet.
 

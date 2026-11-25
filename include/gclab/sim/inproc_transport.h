@@ -26,9 +26,9 @@
 // Without the rx port, a linear Reduce would look as fast as one message --
 // a classic way a naive simulator lies.
 //
-// Not modelled yet (Module 2): heterogeneous links / topology, shared-link
-// contention (two flows on one PCIe switch uplink), reduction compute cost
-// (the gamma term), protocol overheads (NCCL LL vs Simple).
+// Module 2 optionally replaces the homogeneous link with topology routes and
+// serializes flows that name the same shared resource. Still not modelled:
+// reduction compute cost (the gamma term), protocol overheads (LL vs Simple).
 
 #include "gclab/sim/transport.h"
 #include "gclab/sim/world.h"

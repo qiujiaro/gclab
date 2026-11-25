@@ -8,10 +8,37 @@
 #include "gclab/common/error.h"
 #include "gclab/common/log.h"
 #include "gclab/sim/cost_model.h"
+#include "gclab/sim/topology.h"
 
 namespace gclab::sim {
 
 namespace {
+
+struct ScheduledSend {
+  double start_us = 0.0;
+  double finish_us = 0.0;
+  double alpha_us = 0.0;
+  double wire_us = 0.0;
+};
+
+ScheduledSend schedule_send(World& world, int src, int dst, double earliest_start_us,
+                            std::size_t bytes) {
+  const WorldConfig& config = world.config();
+  LinkParams link = config.link;
+  const std::vector<int>* shared_resources = nullptr;
+  if (config.topology) {
+    const LinkPath& path = config.topology->path(src, dst);
+    link = path.link;
+    shared_resources = &path.shared_resources;
+  }
+
+  const double wire_us = wire_time_us(link, bytes);
+  double start_us = earliest_start_us;
+  if (shared_resources != nullptr) {
+    start_us = world.reserve_shared_resources(*shared_resources, start_us, wire_us);
+  }
+  return {start_us, start_us + wire_us, link.alpha_us, wire_us};
+}
 
 class SendRequest final : public Request {
  public:
@@ -62,14 +89,16 @@ void InProcTransport::send(int dst, const void* buf, std::size_t bytes, int tag)
   }
   if (bytes != 0 && buf == nullptr) throw CommError("null send buffer with non-zero size");
   // Self-send is legal: eager buffering makes a subsequent self-recv safe.
-  const double start_us = std::max(clock_us_, tx_free_us_);
-  const double finish_us = start_us + wire_time_us(world_.config().link, bytes);
-  tx_free_us_ = finish_us;
-  clock_us_ = finish_us;
+  const ScheduledSend timing =
+      schedule_send(world_, rank_, dst, std::max(clock_us_, tx_free_us_), bytes);
+  tx_free_us_ = timing.finish_us;
+  clock_us_ = timing.finish_us;
 
   Message msg;
   msg.tag = tag;
-  msg.send_start_us = start_us;
+  msg.send_start_us = timing.start_us;
+  msg.alpha_us = timing.alpha_us;
+  msg.wire_time_us = timing.wire_us;
   msg.payload.resize(bytes);
   if (bytes != 0) std::memcpy(msg.payload.data(), buf, bytes);
   world_.channel(rank_, dst).push(std::move(msg));
@@ -98,9 +127,9 @@ void InProcTransport::recv(int src, void* buf, std::size_t bytes, int tag) {
   }
   if (bytes != 0) std::memcpy(buf, msg.payload.data(), bytes);
 
-  const double first_byte_us = msg.send_start_us + world_.config().link.alpha_us;
+  const double first_byte_us = msg.send_start_us + msg.alpha_us;
   const double begin_us = std::max(first_byte_us, rx_free_us_);
-  const double finish_us = begin_us + wire_time_us(world_.config().link, bytes);
+  const double finish_us = begin_us + msg.wire_time_us;
   rx_free_us_ = finish_us;
   clock_us_ = std::max(clock_us_, finish_us);
 }
@@ -116,23 +145,23 @@ RequestPtr InProcTransport::isend(int dst, const void* buf, std::size_t bytes, i
     throw CommError("null send buffer with non-zero size");
   }
 
-  const double start_us = std::max(clock_us_, tx_free_us_);
-  const double finish_us = start_us + wire_time_us(world_.config().link, bytes);
-  tx_free_us_ = finish_us;
+  const ScheduledSend timing =
+      schedule_send(world_, rank_, dst, std::max(clock_us_, tx_free_us_), bytes);
+  tx_free_us_ = timing.finish_us;
 
   Message msg;
   msg.tag = tag;
-  msg.send_start_us = start_us;
+  msg.send_start_us = timing.start_us;
+  msg.alpha_us = timing.alpha_us;
+  msg.wire_time_us = timing.wire_us;
   msg.payload.resize(bytes);
   if (bytes != 0) std::memcpy(msg.payload.data(), buf, bytes);
   world_.channel(rank_, dst).push(std::move(msg));
 
-  return std::make_unique<SendRequest>(this, finish_us);
+  return std::make_unique<SendRequest>(this, timing.finish_us);
 }
 
 RequestPtr InProcTransport::irecv(int src, void* buf, std::size_t bytes, int tag) {
-  // TODO(M2/T6): create an in-process receive request that completes only when
-  // a matching message is available, or fails on timeout/world abort.
   if (src < 0 || src >= size()) {
     throw CommError(
         "bad recv peer " + std::to_string(src) +
@@ -206,18 +235,12 @@ void InProcTransport::wait(Request& request) {
           recv_request->bytes);
     }
 
-    const double first_byte_us =
-        msg.send_start_us +
-        world_.config().link.alpha_us;
+    const double first_byte_us = msg.send_start_us + msg.alpha_us;
 
     const double begin_us =
         std::max(first_byte_us, rx_free_us_);
 
-    const double finish_us =
-        begin_us +
-        wire_time_us(
-            world_.config().link,
-            recv_request->bytes);
+    const double finish_us = begin_us + msg.wire_time_us;
 
     rx_free_us_ = finish_us;
     clock_us_ = std::max(clock_us_, finish_us);

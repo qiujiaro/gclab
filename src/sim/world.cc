@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <exception>
 #include <mutex>
 #include <string>
@@ -10,14 +11,20 @@
 #include "gclab/common/error.h"
 #include "gclab/common/log.h"
 #include "gclab/sim/inproc_transport.h"
+#include "gclab/sim/topology.h"
 
 namespace gclab::sim {
 
 World::World(WorldConfig cfg) : cfg_(cfg) {
   if (cfg_.nranks < 1) throw CommError("nranks must be >= 1");
-  const int n = cfg_.nranks;
-  channels_.reserve(static_cast<std::size_t>(n) * n);
-  for (int i = 0; i < n * n; ++i) channels_.push_back(std::make_unique<Channel>());
+  if (cfg_.topology && cfg_.topology->nranks() != cfg_.nranks) {
+    throw CommError("topology rank count does not match world rank count");
+  }
+  const auto n = static_cast<std::size_t>(cfg_.nranks);
+  channels_.reserve(n * n);
+  for (std::size_t i = 0; i < n * n; ++i) {
+    channels_.push_back(std::make_unique<Channel>());
+  }
 }
 
 Channel& World::channel(int src, int dst) {
@@ -28,12 +35,36 @@ Channel& World::channel(int src, int dst) {
   return *channels_[static_cast<std::size_t>(src) * n + dst];
 }
 
+double World::reserve_shared_resources(const std::vector<int>& resources,
+                                       double earliest_start_us, double duration_us) {
+  if (!std::isfinite(earliest_start_us) || earliest_start_us < 0.0 ||
+      !std::isfinite(duration_us) || duration_us < 0.0) {
+    throw CommError("invalid shared-resource reservation time");
+  }
+  if (resources.empty()) return earliest_start_us;
+
+  std::lock_guard<std::mutex> lock(shared_resource_mu_);
+  double start_us = earliest_start_us;
+  for (int resource : resources) {
+    if (resource < 0) throw CommError("shared resource id must be non-negative");
+    start_us = std::max(start_us, shared_resource_free_us_[resource]);
+  }
+  const double finish_us = start_us + duration_us;
+  if (!std::isfinite(finish_us)) throw CommError("shared-resource finish time overflow");
+  for (int resource : resources) shared_resource_free_us_[resource] = finish_us;
+  return start_us;
+}
+
 void World::abort() {
   for (auto& ch : channels_) ch->abort();
 }
 
 RunResult World::run(const std::function<void(Transport&)>& fn) {
   const int n = cfg_.nranks;
+  {
+    std::lock_guard<std::mutex> lock(shared_resource_mu_);
+    shared_resource_free_us_.clear();
+  }
   RunResult result;
   result.final_clock_us.assign(n, 0.0);
 

@@ -30,6 +30,10 @@ struct Message {
   // Simulated time at which the SENDER started injecting this message.
   // The receiver uses it to compute when the bytes finish arriving.
   double send_start_us = 0.0;
+  // Route timing captured by the sender. Keeping it with the message lets the
+  // receiver honor heterogeneous topology paths without recomputing a route.
+  double alpha_us = 0.0;
+  double wire_time_us = 0.0;
 };
 
 class Channel {

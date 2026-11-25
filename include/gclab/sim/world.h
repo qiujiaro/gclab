@@ -8,6 +8,8 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include "gclab/sim/channel.h"
@@ -23,8 +25,8 @@ namespace gclab::sim {
 struct WorldConfig {
   int nranks = 2;
   LinkParams link{};  // homogeneous fully-connected network in Module 1
-  // TODO(M2/T10): when non-null, make InProcTransport use this topology and
-  // account for contention on LinkPath::shared_resources.
+  // Optional heterogeneous route and shared-link model. When null, Module-1's
+  // homogeneous `link` remains in effect.
   std::shared_ptr<const Topology> topology;
   std::chrono::milliseconds recv_timeout{2000};
 };
@@ -52,11 +54,18 @@ class World {
 
   const WorldConfig& config() const { return cfg_; }
   Channel& channel(int src, int dst);
+  // Atomically reserve every shared resource on a route. Returns the actual
+  // start time after waiting for earlier users and marks the resources busy
+  // for `duration_us`.
+  double reserve_shared_resources(const std::vector<int>& resources,
+                                  double earliest_start_us, double duration_us);
   void abort();
 
  private:
   WorldConfig cfg_;
   std::vector<std::unique_ptr<Channel>> channels_;  // index src * n + dst
+  std::mutex shared_resource_mu_;
+  std::unordered_map<int, double> shared_resource_free_us_;
 };
 
 }  // namespace gclab::sim

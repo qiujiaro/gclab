@@ -133,25 +133,111 @@ RequestPtr InProcTransport::isend(int dst, const void* buf, std::size_t bytes, i
 RequestPtr InProcTransport::irecv(int src, void* buf, std::size_t bytes, int tag) {
   // TODO(M2/T6): create an in-process receive request that completes only when
   // a matching message is available, or fails on timeout/world abort.
-  (void)src;
-  (void)buf;
-  (void)bytes;
-  (void)tag;
-  throw NotImplemented("InProcTransport::irecv");
+  if (src < 0 || src >= size()) {
+    throw CommError(
+        "bad recv peer " + std::to_string(src) +
+        " at rank " + std::to_string(rank_));
+  }
+
+  if (bytes != 0 && buf == nullptr) {
+    throw CommError("null recv buffer with non-zero size");
+  }
+
+  return std::make_unique<RecvRequest>(
+      this, src, buf, bytes, tag);
 }
 
 void InProcTransport::wait(Request& request) {
-  // TODO(M2/T6): reject requests created by another transport, reject a
-  // second wait, complete the operation, and advance the simulated clock.
-  (void)request;
-  throw NotImplemented("InProcTransport::wait");
+  // SendRequest
+  if (auto* send_request =
+          dynamic_cast<SendRequest*>(&request)) {
+    if (send_request->owner != this) {
+      throw CommError(
+          "send request belongs to another transport");
+    }
+
+    if (send_request->waited) {
+      throw CommError(
+          "send request has already been waited");
+    }
+
+    clock_us_ =
+        std::max(clock_us_, send_request->finish_us);
+
+    send_request->waited = true;
+    return;
+  }
+
+  // RecvRequest
+  if (auto* recv_request =
+          dynamic_cast<RecvRequest*>(&request)) {
+    if (recv_request->owner != this) {
+      throw CommError(
+          "receive request belongs to another transport");
+    }
+
+    if (recv_request->waited) {
+      throw CommError(
+          "receive request has already been waited");
+    }
+
+    Message msg =
+        world_.channel(recv_request->src, rank_)
+            .pop(
+                recv_request->tag,
+                world_.config().recv_timeout);
+
+    if (msg.payload.size() != recv_request->bytes) {
+      throw CommError(
+          "recv size mismatch from peer " +
+          std::to_string(recv_request->src) +
+          " for tag " +
+          std::to_string(recv_request->tag) +
+          ": expected " +
+          std::to_string(recv_request->bytes) +
+          " bytes, got " +
+          std::to_string(msg.payload.size()));
+    }
+
+    if (recv_request->bytes != 0) {
+      std::memcpy(
+          recv_request->buffer,
+          msg.payload.data(),
+          recv_request->bytes);
+    }
+
+    const double first_byte_us =
+        msg.send_start_us +
+        world_.config().link.alpha_us;
+
+    const double begin_us =
+        std::max(first_byte_us, rx_free_us_);
+
+    const double finish_us =
+        begin_us +
+        wire_time_us(
+            world_.config().link,
+            recv_request->bytes);
+
+    rx_free_us_ = finish_us;
+    clock_us_ = std::max(clock_us_, finish_us);
+
+    recv_request->waited = true;
+    return;
+  }
+
+  throw CommError("unknown request type");
 }
 
-void InProcTransport::wait_all(std::vector<RequestPtr>& requests) {
-  // TODO(M2/T6): wait in input order and define how already-completed requests
-  // are handled when a later request fails.
-  (void)requests;
-  throw NotImplemented("InProcTransport::wait_all");
+void InProcTransport::wait_all(
+    std::vector<RequestPtr>& requests) {
+  for (auto& request : requests) {
+    if (!request) {
+      throw CommError("null request in wait_all");
+    }
+
+    wait(*request);
+  }
 }
 
 }  // namespace gclab::sim
